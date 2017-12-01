@@ -14,7 +14,8 @@ gsr_stm_skip_model <- stm(skip_stm$documents,
                           skip_stm$vocab,
                           K=0,
                           prevalence = ~ rating + brand,
-                          max.em.its = 3,
+                          max.em.its = 10,
                           data = skip_stm$meta,
-                          reportevery = 1,
+                          reportevery = 2,
                           seed = 1979)
+

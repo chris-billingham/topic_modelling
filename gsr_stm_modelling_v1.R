@@ -191,7 +191,7 @@ rm(setup)
 gsr_stm_model <- stm(gsr_stm$documents,
                      gsr_stm$vocab,
                      K=0, 
-                     prevalence = ~ rating,
+                     prevalence = ~ rating + brand,
                      max.em.its = 500,
                      data = gsr_stm$meta,
                      reportevery = 1,

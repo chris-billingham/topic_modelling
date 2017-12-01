@@ -3,9 +3,9 @@
 load(file = "gsr_stm_n2_k0.rda")
 
 # let's split out some good stuff
-gsr <- gsr_stm_n2_k0$gsr_stm_model
+gsr <- gsr_stm_model
 gsr_stm <- gsr_stm_n2_k0$gsr_stm
-gsr_f <- gsr_stm_n2_k0$initial_vars$gsr_final
+gsr_f <- initial_vars$gsr_final
 k <- gsr_stm_n2_k0$gsr_stm_model$k
 
 # this first bunch are stolen from julia silge 
@@ -25,7 +25,7 @@ td_beta %>%
   coord_flip()
 
 # gamma distribution - what likelihood is each document each topic
-td_gamma <- tidy(gsr, matrix = "gamma", document_names = gsr_f$review_id)
+td_gamma <- tidy(gsr_stm_model, matrix = "gamma", document_names = gsr_f$review_id)
 
 ggplot(td_gamma, aes(gamma, fill = as.factor(topic))) + 
   geom_histogram(show.legend = FALSE, bins = 100) + 
@@ -36,16 +36,16 @@ ggplot(td_gamma, aes(gamma, fill = as.factor(topic))) +
 # the 1:58 is 1:k
 
 # this bit can take a while. if you're using different covariates change the formula
-prep <- estimateEffect(1:k ~ rating, gsr, meta = gsr$meta, uncertainty = "Global")
+prep <- estimateEffect( ~ rating + brand, gsr_stm_model, meta = initial_vars$gsr_final, uncertainty = "Global")
 
 # this is the "formula" for each topic, here capped at 1:10, must run prep first
-summary(prep, topics=c(1:10))
+summary(prep, topics=c(21:30))
 
 # this looks at expected topic proportions by topic
-plot.STM(gsr, type = "summary")
+plot.STM(gsr_stm_model, type = "summary")
 
 # this looks at the influence of the covariate on the topic proportions, must run prep first
-plot(prep, covariate = "rating", topics = 4, method = c("continuous"))
+plot(prep, covariate = "rating", topics = 22, method = c("continuous"))
 
 # this looks at the correlation plot between topics
 corr <- topicCorr(gsr, method = c("huge"))
@@ -60,4 +60,10 @@ findThoughts(gsr, texts = gsr_f$review_text, topics = 4, n=5)
 # highest prob (same as beta), frex, lift and score for each topic by tokens
 labelTopics(gsr)
 
+dt <- make.dt(gsr, gsr_f)
+
+ktopics <- searchK(gsr_stm$documents, 
+                   gsr_stm$vocab, 
+                   prevalence = ~ rating + brand, 
+                   K = c(50:60))
 
