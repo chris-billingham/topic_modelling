@@ -8,6 +8,8 @@ library(tidytext) # for the power of the tidytext
 library(quanteda) # to convert things into dfm
 library(stm) # the main topic modelling package
 library(textstem) # for lemmatising
+library(caret) # partitioning
+library(lubridate)
 
 # modelling initialisation
 ngram <- 2
@@ -15,16 +17,16 @@ stemlem <- "l"
 brand_replace <- TRUE
 
 # load GSR from the working directory
-gsr <- read_csv("gsr_new.csv", col_types = cols(weekending = col_date(format = "%Y-%m-%d")))
+gsr <- read_csv("data/gsr_new.csv", col_types = cols(weekending = col_date(format = "%Y-%m-%d")))
 
 # get some columns from GSR and set up as a new tibble
-gsr_reviews <- tibble(gsr$review_id, gsr$weekending, gsr$trading_title_code, gsr$overall_rating, gsr$customer_service_sat, gsr$recommend, gsr$review_text)
+gsr_reviews <- tibble(gsr$review_id, yday(gsr$submission_date), gsr$weekending, gsr$trading_title_code, gsr$overall_rating, gsr$customer_service_sat, gsr$recommend, gsr$review_text)
 
 # cleanup
 rm(gsr)
 
 # rename columns - didnt work without doing this, maybe it didnt like $ in column name?
-colnames(gsr_reviews) <- c("review_id", "weekending", "brand", "rating", "csat", "recommend", "review_text")
+colnames(gsr_reviews) <- c("review_id", "day_in_year", "weekending", "brand", "rating", "csat", "recommend", "review_text")
 
 # next bit commented out as we're not using csat and recommend
 # insert bit that looks at sparseness of csat and recommend
@@ -33,7 +35,7 @@ colnames(gsr_reviews) <- c("review_id", "weekending", "brand", "rating", "csat",
 #  filter(!(is.na(recommend)))
 
 # subset for complete weeks
-gsr_reviews %<>% filter(weekending >= '2015-03-04' & weekending <= '2017-10-06')
+gsr_reviews %<>% filter(weekending >= '2016-02-27' & weekending <= '2017-10-06')
 
 # fork all cleaning onto review_scrub here
 # remove all non-UTF8 characters
@@ -46,7 +48,7 @@ gsr_reviews$review_scrub %<>% tolower()
 # i've created a csv file with our brand names
 # replace all instances of brand names with the word brand
 if(brand_replace == TRUE) {
-  brands <- read_csv("brands.csv")
+  brands <- read_csv("data/brands.csv")
 gsr_reviews$review_scrub <- brands$brand %>% 
   paste(collapse = "|") %>% 
   gsub("brand", gsr_reviews$review_scrub)
@@ -76,12 +78,15 @@ if(stemlem == "s") {
 }
 # let's get out the stop words we want. read in the r_stop file
 # then split those stop words into unigram and bigram lists
-r_stop <- read_csv("r_stop.csv")
+r_stop <- read_csv("data/r_stop.csv")
 uni_stop <- r_stop %>% filter(ngram == 1)
 bi_stop <- r_stop %>% filter(ngram == 2)
 
 # clean up
 rm(r_stop)
+
+# save off original gsr_reviews
+# gsr_reviews_s <- gsr_reviews
 
 # let's do a unigram tokenise, remove stopwords
 gsr_uni <- gsr_reviews %>%
@@ -141,6 +146,15 @@ gsr_ngrams <- gsr_uni_stop %>%
   count(review_id, word) %>%
   ungroup()
 
+# remove low freq n-grams
+freq <- gsr_ngrams %>% 
+  group_by(word) %>% 
+  summarise(count = sum(n))
+low_freq <- freq %>% 
+  filter(count <= 5)
+gsr_ngrams <- gsr_ngrams %>% 
+  anti_join(low_freq, by = c("word" = "word"))
+
 # remove any that have now been na'ed
 gsr_ngrams %<>% filter(!is.na(word))
 gsr_ngrams %<>% filter(!is.na(review_id))
@@ -191,10 +205,10 @@ rm(setup)
 gsr_stm_model <- stm(gsr_stm$documents,
                      gsr_stm$vocab,
                      K=0, 
-                     prevalence = ~ rating + brand,
+                     prevalence = ~ rating + brand + s(day_in_year),
                      max.em.its = 500,
                      data = gsr_stm$meta,
-                     reportevery = 1,
+                     reportevery = 2,
                      seed = 1979)
 
 # add the model to the initial vars and save of to working directory
