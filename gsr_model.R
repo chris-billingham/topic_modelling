@@ -12,7 +12,7 @@ library(caret) # partitioning
 library(lubridate)
 
 # modelling initialisation
-ngram <- 2
+ngram <- 1
 stemlem <- "l"
 brand_replace <- TRUE
 
@@ -49,9 +49,9 @@ gsr_reviews$review_scrub %<>% tolower()
 # replace all instances of brand names with the word brand
 if(brand_replace == TRUE) {
   brands <- read_csv("data/brands.csv")
-gsr_reviews$review_scrub <- brands$brand %>% 
+reviews2 <- brands$brand %>% 
   paste(collapse = "|") %>% 
-  gsub("brand", gsr_reviews$review_scrub)
+  gsub("brand", reviews)
 # clean up
 rm(brands)
 }
@@ -181,13 +181,6 @@ rm(gsr_ngrams)
 # gsr_tokens which is the tokenisation at the level requested
 # gsr_final which is the filtered gsr_reviews for only those review_id where 
 
-# add all variables to a list and save this off, jic
-setup <- list(ngram, stemlem, brand_replace)
-names(setup) <- c("ngram","stemlem","brand_replace")
-
-initial_vars <- list(setup, gsr_reviews, gsr_tokens, gsr_final)
-names(initial_vars) <- c("setup", "gsr_reviews","gsr_tokens","gsr_final")
-
 # turn the tidy df into a quatenda::dfm
 gsr_dfm <- gsr_tokens %>% 
   cast_dfm(review_id, word, n)
@@ -204,14 +197,58 @@ rm(setup)
 # now run the model
 gsr_stm_model <- stm(gsr_stm$documents,
                      gsr_stm$vocab,
-                     K=0, 
-                     prevalence = ~ rating + brand + s(day_in_year),
+                     K=11, 
+                     prevalence = ~ rating,
+                     content = ~ brand,
                      max.em.its = 500,
                      data = gsr_stm$meta,
-                     reportevery = 2,
+                     reportevery = 1,
+                     control=list(recoverEG=FALSE),
                      seed = 1979)
 
 # add the model to the initial vars and save of to working directory
-gsr_stm_n2_k0 <- list(initial_vars, gsr_stm, gsr_stm_model)
-names(gsr_stm_n2_k0) <- c("initial_vars", "gsr_stm", "gsr_stm_model")
-save(gsr_stm_n2_k0, file = "gsr_stm_n2_k0.rda")
+plot(corr, vlabels = topics, layout = igraph::layout_as_tree)
+
+
+
+k <- gsr_stm_model$settings$dim$K
+topic_props <- make.dt(gsr_stm_model, meta = gsr_stm$meta)
+topics <- colnames(topic_props[,2:(k+1)])[max.col(topic_props[,2:(k+1)], ties.method = 'first')] %>%
+  as.tibble()
+gsr_topics <- cbind(topic_props[,(k+2):length(topic_props)], topics)
+colnames(gsr_topics) <- c("review_id","day_in_year","weekending","brand","rating","csat","recommend","review_text","review_scrub","topic")
+
+extract_cluster <- function(x) {
+cluster <- kmeans(topic_props[,2:57], x, iter.max = 100, nstart = 25) %>%
+  fitted() %>%
+  row.names() %>%
+  as.tibble()
+colnames(cluster) <- paste0("k_",x)
+return(cluster)
+}
+
+loop <- seq(3,11, by = 2) %>% map_dfc(extract_cluster)
+
+k15 <- extract_cluster(15)
+
+gsr_cluster <- bind_cols(gsr_topics, loop)
+gsr_cluster <- bind_cols(gsr_cluster, k15)
+
+mess <- as.tibble(table(gsr_cluster$topic, gsr_cluster$k_15))
+colnames(mess) <- c("topic","cluster","volume")
+topic_cluster <- mess %>% 
+  group_by(topic) %>% 
+  filter (volume == max(volume))
+
+table(topic_cluster$cluster)
+
+
+sageLabels(gsr_stm_model)
+labelTopics(gsr_stm_model, topics = c(13,16,32,48,9))
+
+str(gsr_cluster)
+
+
+x <- all_answered_questions(start_date ='2017-01-01')
+
+
